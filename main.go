@@ -9,75 +9,73 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-var clients = make(map[*websocket.Conn]bool) // connected clients
-var broadcast = make(chan Message)           // broadcast channel
-
-// Configure the upgrader
-var upgrader = websocket.Upgrader{}
-
-// Define our message object
-type Message struct {
-	Email    string `json:"email"`
-	Username string `json:"username"`
-	Message  string `json:"message"`
-}
-
-func handleConnections(w http.ResponseWriter, r *http.Request) {
-	// Upgrade initial GET request to a websocket
-	ws, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Fatal(err)
-	}
-	// Make sure we close the connection when the function returns
-	defer ws.Close()
-	// Register our new client
-	clients[ws] = true
-	for {
-		var msg Message
-		// Read in a new message as JSON and map it to a Message object
-		err := ws.ReadJSON(&msg)
-		if err != nil {
-			log.Printf("error: %v", err)
-			delete(clients, ws)
-			break
-		}
-		// Send the newly received message to the broadcast channel
-		broadcast <- msg
-	}
-}
-
-func handleMessages() {
-	for {
-		// Grab the next message from the broadcast channel
-		msg := <-broadcast
-		fmt.Printf("msg recieved : %s \n", msg)
-		// Send it out to every client that is currently connected
-		for client := range clients {
-			err := client.WriteJSON(msg)
-			if err != nil {
-				log.Printf("error: %v", err)
-				client.Close()
-				delete(clients, client)
-			}
-		}
-	}
-}
-
 func hello(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintln(w, "Hello World")
 }
 
+// We'll need to define an Upgrader
+// this will require a Read and Write buffer size
+var upgrader = websocket.Upgrader{
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+
+	// We'll need to check the origin of our connection
+	// this will allow us to make requests from our React
+	// development server to here.
+	// For now, we'll do no checking and just allow any connection
+	CheckOrigin: func(r *http.Request) bool { return true },
+}
+
+// define a reader which will listen for
+// new messages being sent to our WebSocket
+// endpoint
+func reader(conn *websocket.Conn) {
+	for {
+		// read in a message
+		messageType, p, err := conn.ReadMessage()
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		// print out that message for clarity
+		fmt.Println(string(p))
+
+		if err := conn.WriteMessage(messageType, p); err != nil {
+			log.Println(err)
+			return
+		}
+
+	}
+}
+
+// define our WebSocket endpoint
+func serveWs(w http.ResponseWriter, r *http.Request) {
+	fmt.Println(r.Host)
+
+	// upgrade this connection to a WebSocket
+	// connection
+	ws, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Println(err)
+	}
+	// listen indefinitely for new messages coming
+	// through on our WebSocket connection
+	reader(ws)
+}
+
+func setupRoutes() {
+	http.HandleFunc("/hello", hello)
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "Simple Server")
+	})
+	// mape our `/ws` endpoint to the `serveWs` function
+	http.HandleFunc("/ws", serveWs)
+}
+
 func main() {
 
-	// Create a simple file server
-	fs := http.FileServer(http.Dir("./public"))
-	http.Handle("/", fs)
-	// Configure websocket route
-	http.HandleFunc("/ws", handleConnections)
-	// Start listening for incoming chat messages
-	go handleMessages()
+	setupRoutes()
 
-	http.HandleFunc("/hello", hello)
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
