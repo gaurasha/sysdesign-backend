@@ -1,0 +1,1 @@
+deploy to heroku using go dep : https://leanpub.com/howtodeployagowebapptoheroku101/read
