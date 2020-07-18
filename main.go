@@ -12,6 +12,9 @@ import (
 func hello(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintln(w, "Hello World")
 }
+func test(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintln(w, "test-----Hello World")
+}
 
 // We'll need to define an Upgrader
 // this will require a Read and Write buffer size
@@ -65,6 +68,7 @@ func serveWs(w http.ResponseWriter, r *http.Request) {
 
 func setupRoutes() {
 	http.HandleFunc("/hello", hello)
+	http.HandleFunc("/test", test)
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "Simple Server")
 	})
